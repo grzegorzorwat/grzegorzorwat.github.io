@@ -8,7 +8,7 @@ background: '/img/posts/2022-05-23-decorate-command-handlers.jpg'
 
 When implementing CQRS with the MediatR library, we're using the `IRequest` interface for both commands and queries, but we often want different handling of those request types.
 
-Following the example of [Kamil Grzybek's Modular Monolith with DDD](https://github.com/kgrzybek/modular-monolith-with-ddd) to distinguish commands from queries, we can create marker interfaces `ICommand` with `ICommandHandler` and `IQuery` with `IQueryHandler`:
+Following the example of Kamil Grzybek's Modular Monolith with DDD, we can make marker interfaces ICommand with ICommandHandler and IQuery with IQueryHandler to distinguish commands from queries:
 ```c#
 public interface ICommand : IRequest { }
 public interface ICommandHandler<in TCommand>
@@ -19,7 +19,7 @@ public interface IQueryHandler<in TQuery, TResult>
     : IRequestHandler<TQuery, TResult> where TQuery : IQuery<TResult> { }
 ```
 
-And now it is possible to create decorators only for commands or queries handlers. An example of a decorator that should decorate only `ICommandHandlers` is `UnitOfWorkCommandHandlerDecorator`, which commits `UnitOfWork` at the end of the `Handle` method.
+It is now possible to create decorators only for commands or queries handlers. An example of a decorator that should decorate only `ICommandHandlers` is the `UnitOfWorkCommandHandlerDecorator`, which commits `UnitOfWork` at the end of the `Handle` method.
 
 ```c#
 internal class UnitOfWorkCommandHandlerDecorator<TCommand>
@@ -47,7 +47,7 @@ internal class UnitOfWorkCommandHandlerDecorator<TCommand>
 }
 ```
 
-Now we need a method to register all `ICommandHandlers`, as we can no longer depend on MediatR's registration method, which doesn't know about our new interfaces. To do so we can define an extension method that makes use of library called [Scrutor](https://github.com/khellang/Scrutor), which extends the registration possibilities of ASP.NET Core DI, and its `Scan` method to get all non-generic (closed) implementations of a given generic type and register them:
+We now need a method to register all `ICommandHandlers` because we can't use MediatR's registration method, which doesn't know about our new interfaces. To accomplish this, we can define an extension method that uses a library called [Scrutor](https://github.com/khellang/Scrutor), which extends the registration capabilities of ASP.NET Core DI and its `Scan` method to retrieve and register all non-generic (closed) implementations of a given generic type:
 
 ```c#
 public static IServiceCollection AddClosedGenericTypes(
@@ -88,7 +88,7 @@ So, in order for MediatR to use decorated `ICommandHandlers`, we have to make AS
 To do so, we can define an extension method that gets all `ServiceDescriptors` of a given registered generic type, and then for each of these, it gets its exact parent type and register it with a factory that returns the registered child type.
 
 ```c#
-public static IServiceCollection RegisterGenericsAsItsParents(
+public static IServiceCollection RegisterGenericsAsItsParent(
     this IServiceCollection services,
     Type registeredGenericType,
     Type parentGenericType)
@@ -116,8 +116,8 @@ public static IServiceCollection RegisterGenericsAsItsParents(
 So in our case, when we invoke it, it gets all `ICommandHandlers' ServiceDescriptors` and then registers their parent `IRequestHandler` type with the factory, which returns that decorated `ICommandHandler`:
 
 ```c#
-services.RegisterGenericsAsItsParents(typeof(ICommandHandler<>),
-    typeof(IRequestHandler<>));
+services.RegisterGenericsAsItsParent(typeof(ICommandHandler<>),
+    typeof(IRequestHandler<,>));
 ```
 
 And at the end, we can use the `AddMediatR` extension method to register `IRequestHandlers` that are not `ICommandHandlers` and the other of the dependencies required by MediatR:
