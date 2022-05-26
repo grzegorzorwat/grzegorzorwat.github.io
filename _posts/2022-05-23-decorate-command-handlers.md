@@ -8,7 +8,7 @@ background: '/img/posts/2022-05-23-decorate-command-handlers.jpg'
 
 When implementing CQRS with the MediatR library, we're using the `IRequest` interface for both commands and queries, but we often want different handling of those request types.
 
-Following the example of Kamil Grzybek's Modular Monolith with DDD, we can make marker interfaces ICommand with ICommandHandler and IQuery with IQueryHandler to distinguish commands from queries:
+Following the example of [Kamil Grzybek's Modular Monolith with DDD](https://github.com/kgrzybek/modular-monolith-with-ddd), we can make marker interfaces ICommand with ICommandHandler and IQuery with IQueryHandler to distinguish commands from queries:
 ```c#
 public interface ICommand : IRequest { }
 public interface ICommandHandler<in TCommand>
@@ -47,7 +47,7 @@ internal class UnitOfWorkCommandHandlerDecorator<TCommand>
 }
 ```
 
-We now need a method to register all `ICommandHandlers` because we can't use MediatR's registration method, which doesn't know about our new interfaces. To accomplish this, we can define an extension method that uses a library called [Scrutor](https://github.com/khellang/Scrutor), which extends the registration capabilities of ASP.NET Core DI and its `Scan` method to retrieve and register all non-generic (closed) implementations of a given generic type:
+We now need a method to register all `ICommandHandlers` because we can't use MediatR's registration method, which doesn't know about our new interfaces. To accomplish this, we can define an extension method that uses a library called [Scrutor](https://github.com/khellang/Scrutor), which extends the registration capabilities of ASP.NET Core DI and its `Scan` method to retrieve and register all closed (so decorators are filtered out) implementations of a given generic type:
 
 ```c#
 public static IServiceCollection AddClosedGenericTypes(
@@ -66,7 +66,7 @@ public static IServiceCollection AddClosedGenericTypes(
 }
 ```
 
-And then invoke it to register all closed implementations (so decorators are filtered out) of `ICommandHandler` with transient scope:
+And then invoke it to register all closed implementations of `ICommandHandler` with transient scope:
 
 ```c#
 services.AddClosedGenericTypes(typeof(ICommandHandler<>).Assembly,
@@ -81,11 +81,11 @@ services.Decorate(typeof(ICommandHandler<>),
 
 It also supports open generic registration, so in this case, it decorates every registered `ICommandHandler` with `UnitOfWorkCommandHandlerDecorator`.
 
-Unfortunately, it isn't enough, because MediatR still requires and uses `IRequestHandlers` instead of `ICommandHandlers`. To get instances of handlers, it uses its `ServiceFactory` delegate, which in the default ASP.NET Core DI MediatR registration is `p => p.GetRequiredService`.
+Unfortunately, it isn't enough, because MediatR still requires and uses `IRequestHandlers` rather than `ICommandHandlers`. To get instances of handlers, it uses its `ServiceFactory` delegate, which in the default MediatR registration is `p => p.GetRequiredService`.
 
-So, in order for MediatR to use decorated `ICommandHandlers`, we have to make ASP.NET Core DI return them whenever MediatR requests `IRequestHandlers`.
+In order for MediatR to use decorated `ICommandHandlers`, we have to make ASP.NET Core DI return them whenever MediatR requests `IRequestHandlers`.
 
-To do so, we can define an extension method that gets all `ServiceDescriptors` of a given registered generic type, and then for each of these, it gets its exact parent type and register it with a factory that returns the registered child type.
+To accomplish this, we can define an extension method that gets all `ServiceDescriptors` of a given registered generic type, and then for each of these, it gets its exact parent type and registers it with a factory that returns the registered child type.
 
 ```c#
 public static IServiceCollection RegisterGenericsAsItsParent(
@@ -113,24 +113,25 @@ public static IServiceCollection RegisterGenericsAsItsParent(
 }
 ```
 
-So in our case, when we invoke it, it gets all `ICommandHandlers' ServiceDescriptors` and then registers their parent `IRequestHandler` type with the factory, which returns that decorated `ICommandHandler`:
+When we call it, it retrieves the `ServiceDescriptors` of all `ICommandHandlers` and then registers their parent IRequestHandler types with the factory, which returns decorated `ICommandHandler` instead:
 
 ```c#
 services.RegisterGenericsAsItsParent(typeof(ICommandHandler<>),
     typeof(IRequestHandler<,>));
 ```
 
-And at the end, we can use the `AddMediatR` extension method to register `IRequestHandlers` that are not `ICommandHandlers` and the other of the dependencies required by MediatR:
+Finally, we can use the `AddMediatR` extension method to register `IRequestHandlers` that are not `ICommandHandlers` as well as the other dependencies required by MediatR:
+
 ```c#
 services.AddMediatR(typeof(ICommand));
 ```
 
-Now whenever MediatR requests `IRequestHandler` ASP.NET Core DI will return a decorated `ICommandHandler`.
+ASP.NET Core DI will now return a decorated `ICommandHandler` whenever MediatR requests `IRequestHandler`.
 
-### Alternative approach
-Another way to get MediatR to use decorated `ICommandHandler` would be to make it request `ICommandHandlers` from the container instead of `IRequestHandlers`.
+Another way to make MediatR use decorated `ICommandHandler` is to make it request `ICommandHandlers` from the container rather than `IRequestHandlers`.
 
-In order to do this, we have to register `ICommandHandlers` and decorate them like in the first approach:
+In order to do this, we have to register `ICommandHandlers` and decorate them similarly to the first approach:
+
 ```c#
 services.AddClosedGenericTypes(typeof(ICommand).Assembly,
     typeof(ICommandHandler<>), ServiceLifetime.Transient);
@@ -138,7 +139,8 @@ services.Decorate(typeof(ICommandHandler<>),
     typeof(UnitOfWorkCommandHandlerDecorator<>));
 ```
 
-And then register custom MediatR's `ServiceFactory` delegate, which would check if MediatR requests `IRequestHandler` and if there is `ICommandHandler` for it:
+Then register custom MediatR's `ServiceFactory` delegate, that checks if MediatR requests a `IRequestHandler` and if there is a `ICommandHandler` for it, and if there is, it returns it instead:
+
 ```c#
 services.AddTransient<ServiceFactory>(sp =>
 {
@@ -158,7 +160,6 @@ services.AddTransient<ServiceFactory>(sp =>
 });
 ```
 
-But I don't like this approach because it is harder to understand, and it has more overhead on runtime.
+However, I don't like this approach because it is harder to understand and has runtime overhead.
 
-### Conclusion
-As you can see, it is possible to create marker interfaces for commands and queries and use them with MediatR and ASP.NET Core DI. As an alternative, I'd consider using more advanced DI Container like Autofac which would make this task a lot easier. Another approach I can recommend is using the Command-Handler pattern without MediatR like in [Oskar Dudycz's How to register all CQRS handlers by convention](https://event-driven.io/en/how_to_register_all_mediatr_handlers_by_convention/).
+As you can see, it is possible to create marker interfaces for commands and queries and use them with MediatR and ASP.NET Core DI. As an alternative, as shown in [Modular Monolith with DDD repository](https://github.com/kgrzybek/modular-monolith-with-ddd), I'd consider using a more advanced DI Container, such as Autofac, which would make this task much easier. Another approach I recommend is to use the Command-Handler pattern without MediatR as described in [Oskar Dudycz's How to register all CQRS handlers by convention](https://event-driven.io/en/how_to_register_all_mediatr_handlers_by_convention/).
