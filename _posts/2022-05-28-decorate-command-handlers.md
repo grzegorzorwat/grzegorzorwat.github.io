@@ -2,7 +2,7 @@
 layout: post
 title:  "Decorating Command Handlers"
 subtitle: "Using MediatR and ASP.NET Core DI"
-date: 2020-05-28 14:00:00 -0200
+date: 2022-05-28 14:00:00 -0200
 background: '/img/posts/2022-05-23-decorate-command-handlers.jpg'
 ---
 
